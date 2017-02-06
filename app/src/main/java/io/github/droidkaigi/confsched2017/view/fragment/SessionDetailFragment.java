@@ -10,7 +10,6 @@ import android.support.v4.content.ContextCompat;
 import android.support.v4.widget.NestedScrollView;
 import android.support.v7.app.ActionBar;
 import android.support.v7.app.AppCompatActivity;
-import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -23,7 +22,6 @@ import io.github.droidkaigi.confsched2017.view.activity.SessionFeedbackActivity;
 import io.github.droidkaigi.confsched2017.view.helper.AnimationHelper;
 import io.github.droidkaigi.confsched2017.viewmodel.SessionDetailViewModel;
 import io.reactivex.disposables.CompositeDisposable;
-import io.reactivex.disposables.Disposable;
 
 public class SessionDetailFragment extends BaseFragment implements SessionDetailViewModel.Callback {
 
@@ -53,32 +51,20 @@ public class SessionDetailFragment extends BaseFragment implements SessionDetail
     public void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         sessionId = getArguments().getInt(ARG_SESSION_ID);
-        Disposable disposable = viewModel.findSession(sessionId)
-                .subscribe(
-                        session -> initTheme(),
-                        throwable -> Log.e(TAG, "Failed to find session.", throwable)
-                );
-        compositeDisposable.add(disposable);
+        viewModel.findSession(sessionId);
+    }
+
+    @Override
+    public void onStart() {
+        super.onStart();
+        viewModel.onStart();
     }
 
     @Override
     public void onStop() {
-        super.onStop();
+        viewModel.onStop();
         compositeDisposable.dispose();
-    }
-
-    private void initTheme() {
-        Activity activity = getActivity();
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            // Change theme by topic
-            activity.setTheme(viewModel.getTopicThemeResId());
-
-            ActivityManager.TaskDescription taskDescription =
-                    new ActivityManager.TaskDescription(viewModel.getSessionTitle(), null,
-                            ContextCompat.getColor(activity, viewModel.getSessionVividColorResId()));
-            activity.setTaskDescription(taskDescription);
-        }
+        super.onStop();
     }
 
     @Nullable
@@ -142,4 +128,20 @@ public class SessionDetailFragment extends BaseFragment implements SessionDetail
     public void onClickFeedback() {
         startActivity(SessionFeedbackActivity.createIntent(getContext(), sessionId));
     }
+
+    @Override
+    public void initTheme(int sessionThemeResId) {
+        Activity activity = getActivity();
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            // Change theme by topic
+            activity.setTheme(viewModel.getTopicThemeResId());
+
+            ActivityManager.TaskDescription taskDescription =
+                    new ActivityManager.TaskDescription(viewModel.getSessionTitle(), null,
+                            ContextCompat.getColor(activity, viewModel.getSessionVividColorResId()));
+            activity.setTaskDescription(taskDescription);
+        }
+    }
+
 }

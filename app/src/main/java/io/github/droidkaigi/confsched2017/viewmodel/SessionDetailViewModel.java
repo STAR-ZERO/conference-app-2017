@@ -7,23 +7,20 @@ import android.support.annotation.NonNull;
 import android.support.annotation.StringRes;
 import android.support.annotation.StyleRes;
 import android.text.TextUtils;
-import android.util.Log;
 import android.view.View;
 
 import java.util.Date;
-import java.util.Locale;
 
 import javax.inject.Inject;
 
 import io.github.droidkaigi.confsched2017.R;
+import io.github.droidkaigi.confsched2017.application.SessionsService;
 import io.github.droidkaigi.confsched2017.model.Session;
 import io.github.droidkaigi.confsched2017.model.TopicColor;
-import io.github.droidkaigi.confsched2017.repository.sessions.MySessionsRepository;
-import io.github.droidkaigi.confsched2017.repository.sessions.SessionsRepository;
 import io.github.droidkaigi.confsched2017.util.AlarmUtil;
 import io.github.droidkaigi.confsched2017.util.DateUtil;
 import io.github.droidkaigi.confsched2017.util.LocaleUtil;
-import io.reactivex.Maybe;
+import io.reactivex.disposables.CompositeDisposable;
 
 public class SessionDetailViewModel extends BaseObservable implements ViewModel {
 
@@ -31,9 +28,9 @@ public class SessionDetailViewModel extends BaseObservable implements ViewModel 
 
     private final Context context;
 
-    private final SessionsRepository sessionsRepository;
+    private final SessionsService sessionsService;
 
-    private final MySessionsRepository mySessionsRepository;
+    private CompositeDisposable compositeDisposable = new CompositeDisposable();
 
     private String sessionTitle;
 
@@ -66,11 +63,31 @@ public class SessionDetailViewModel extends BaseObservable implements ViewModel 
     private Callback callback;
 
     @Inject
-    public SessionDetailViewModel(Context context, SessionsRepository sessionsRepository,
-            MySessionsRepository mySessionsRepository) {
+    SessionDetailViewModel(Context context, SessionsService sessionsService) {
         this.context = context;
-        this.sessionsRepository = sessionsRepository;
-        this.mySessionsRepository = mySessionsRepository;
+        this.sessionsService = sessionsService;
+    }
+
+    public void onStart() {
+        compositeDisposable.add(sessionsService.session.subscribe(session -> {
+            setSession(session);
+            callback.initTheme(getTopicThemeResId());
+        }));
+        compositeDisposable.add(sessionsService.existMySession.subscribe(result -> {
+            isMySession = result;
+        }));
+
+        compositeDisposable.add(sessionsService.deleteMySession.subscribe(session -> {
+            AlarmUtil.unregisterAlarm(context, session);
+        }));
+        compositeDisposable.add(sessionsService.saveMySession.subscribe(session -> {
+            AlarmUtil.registerAlarm(context, session);
+        }));
+    }
+
+    public void onStop() {
+        sessionsService.dispose();
+        compositeDisposable.clear();
     }
 
     private void setSession(@NonNull Session session) {
@@ -81,7 +98,6 @@ public class SessionDetailViewModel extends BaseObservable implements ViewModel 
         this.sessionPaleColorResId = topicColor.paleColorResId;
         this.sessionThemeResId = topicColor.themeId;
         this.sessionTimeRange = decideSessionTimeRange(context, session);
-        this.isMySession = mySessionsRepository.isExist(session.id);
         this.slideIconVisibility = session.slideUrl != null ? View.VISIBLE : View.GONE;
         this.dashVideoIconVisibility = session.movieUrl != null && session.movieDashUrl != null ? View.VISIBLE : View.GONE;
         this.roomVisibility = session.room != null ? View.VISIBLE : View.GONE;
@@ -89,13 +105,8 @@ public class SessionDetailViewModel extends BaseObservable implements ViewModel 
         this.languageResId = session.lang != null ? decideLanguageResId(session.lang.toUpperCase()) : R.string.lang_en;
     }
 
-    public Maybe<Session> findSession(int sessionId) {
-        final String languageId = Locale.getDefault().getLanguage().toLowerCase();
-        return sessionsRepository.find(sessionId, languageId)
-                .map(session -> {
-                    setSession(session);
-                    return session;
-                });
+    public void findSession(int sessionId) {
+        sessionsService.findSession(sessionId);
     }
 
     private int decideLanguageResId(@NonNull String languageId) {
@@ -139,17 +150,7 @@ public class SessionDetailViewModel extends BaseObservable implements ViewModel 
     }
 
     public void onClickFab(@SuppressWarnings("unused") View view) {
-        if (mySessionsRepository.isExist(session.id)) {
-            mySessionsRepository.delete(session)
-                    .subscribe((result) -> Log.d(TAG, "Deleted my session"),
-                            throwable -> Log.e(TAG, "Failed to delete my session", throwable));
-            AlarmUtil.unregisterAlarm(context, session);
-        } else {
-            mySessionsRepository.save(session)
-                    .subscribe(() -> Log.d(TAG, "Saved my session"),
-                            throwable -> Log.e(TAG, "Failed to save my session", throwable));
-            AlarmUtil.registerAlarm(context, session);
-        }
+        sessionsService.toggleFab(session);
 
         if (callback != null) {
             callback.onClickFab();
@@ -219,5 +220,7 @@ public class SessionDetailViewModel extends BaseObservable implements ViewModel 
         void onClickFab();
 
         void onClickFeedback();
+
+        void initTheme(int sessionThemeResId);
     }
 }
